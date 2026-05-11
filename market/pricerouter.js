@@ -131,36 +131,38 @@ const router = express.Router();
     }
   });
 
-  /**
-   * GET /api/market/indicators/:symbol
-   * Get technical indicators
-   * Query params: ?period=20
-   */
-  router.get('/indicators/:symbol', (req, res) => {
-    try {
-      const { symbol } = req.params;
-      const period = req.query.period ? parseInt(req.query.period) : 20;
-      
-      const indicators = priceEngine.getTechnicalIndicators(symbol, period);
-      
-      if (!indicators) {
-        return res.status(400).json({
-          success: false,
-          error: 'Not enough data for indicators'
-        });
-      }
-      
-      res.json({
-        success: true,
-        data: indicators
-      });
-    } catch (error) {
-      res.status(404).json({
-        success: false,
-        error: error.message
-      });
-    }
-  });
+  // === INDICATOR CODE (commented out - enable when needed) ===
+  // /**
+  //  * GET /api/market/indicators/:symbol
+  //  * Get technical indicators
+  //  * Query params: ?period=20
+  //  */
+  // router.get('/indicators/:symbol', (req, res) => {
+  //   try {
+  //     const { symbol } = req.params;
+  //     const period = req.query.period ? parseInt(req.query.period) : 20;
+  //     
+  //     const indicators = priceEngine.getTechnicalIndicators(symbol, period);
+  //     
+  //     if (!indicators) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         error: 'Not enough data for indicators'
+  //       });
+  //     }
+  //     
+  //     res.json({
+  //       success: true,
+  //       data: indicators
+  //     });
+  //   } catch (error) {
+  //     res.status(404).json({
+  //       success: false,
+  //       error: error.message
+  //     });
+  //   }
+  // });
+  // === END INDICATOR CODE ===
 
   /**
    * GET /api/market/health
