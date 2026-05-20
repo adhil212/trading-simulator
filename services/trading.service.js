@@ -1,6 +1,6 @@
 import db from "../config/db.js";
 
-const COMMISSION_RATE = 0.001;
+const COMMISSION_RATE = 0;
 
 export async function buyAsset(userId, symbol, quantity, currentPrice) {
   const client = await db.connect();
@@ -385,14 +385,3 @@ export async function getTradeStatistics(userId) {
   }
 }
 
-export default function(priceEngine) {
-  return {
-    buyAsset: (userId, symbol, quantity, currentPrice) => buyAsset(userId, symbol, quantity, currentPrice),
-    sellAsset: (userId, symbol, quantity, currentPrice) => sellAsset(userId, symbol, quantity, currentPrice),
-    getPortfolio: (userId) => getPortfolio(userId),
-    getTradeHistory: (userId, limit, offset) => getTradeHistory(userId, limit, offset),
-    getClosedTrades: (userId, limit, offset) => getClosedTrades(userId, limit, offset),
-    getPerformanceMetrics: (userId) => getPerformanceMetrics(userId),
-    getTradeStatistics: (userId) => getTradeStatistics(userId),
-  };
-}

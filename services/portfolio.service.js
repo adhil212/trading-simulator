@@ -345,17 +345,3 @@ export async function getPortfolioSummary(priceEngine, userId) {
   }
 }
 
-export default function(priceEngine) {
-  return {
-    getPortfolioDashboard: (userId) => getPortfolioDashboard(priceEngine, userId),
-    getPortfolioWithPrices: (userId) => getPortfolioWithPrices(priceEngine, userId),
-    getUserWallet: (userId) => getUserWallet(userId),
-    getPortfolioPerformance: (userId) => getPortfolioPerformance(userId),
-    getPortfolioAllocation: (userId) => getPortfolioAllocation(priceEngine, userId),
-    getDailyStats: (userId) => getDailyStats(userId),
-    getPortfolioGrowth: (userId, days) => getPortfolioGrowth(userId, days),
-    getTopPerformingAssets: (userId, limit) => getTopPerformingAssets(userId, limit),
-    getWorstPerformingAssets: (userId, limit) => getWorstPerformingAssets(userId, limit),
-    getPortfolioSummary: (userId) => getPortfolioSummary(priceEngine, userId),
-  };
-}

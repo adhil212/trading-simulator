@@ -1,0 +1,148 @@
+import db from "../config/db.js";
+import Razorpay from "razorpay";
+import crypto from "crypto";
+
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET,
+});
+
+export const createDepositOrder = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { amount } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: "Invalid amount" });
+    }
+
+    const order = await razorpay.orders.create({
+      amount: Math.round(amount * 100),
+      currency: "INR",
+      receipt: `deposit_${userId}_${Date.now()}`,
+    });
+
+    await db.query(
+      `INSERT INTO transactions (user_id, type, amount, razorpay_order_id, status)
+       VALUES ($1, 'DEPOSIT', $2, $3, 'PENDING')`,
+      [userId, amount, order.id]
+    );
+
+    res.json({
+      success: true,
+      order_id: order.id,
+      amount: order.amount,
+      currency: order.currency,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const verifyDeposit = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(body)
+      .digest("hex");
+
+    if (expectedSignature !== razorpay_signature) {
+      return res.status(400).json({ error: "Invalid payment signature" });
+    }
+
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+
+      const txRes = await client.query(
+        `SELECT id, amount FROM transactions
+         WHERE razorpay_order_id = $1 AND user_id = $2 AND status = 'PENDING'
+         FOR UPDATE`,
+        [razorpay_order_id, userId]
+      );
+
+      if (txRes.rows.length === 0) {
+        throw new Error("Transaction not found or already processed");
+      }
+
+      const tx = txRes.rows[0];
+
+      await client.query(
+        `UPDATE transactions SET status = 'COMPLETED', razorpay_payment_id = $1, razorpay_signature = $2
+         WHERE id = $3`,
+        [razorpay_payment_id, razorpay_signature, tx.id]
+      );
+
+      await client.query(
+        `UPDATE wallets SET balance = balance + $1 WHERE user_id = $2`,
+        [tx.amount, userId]
+      );
+
+      await client.query("COMMIT");
+
+      res.json({ success: true, message: "Deposit successful" });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const withdraw = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { amount } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: "Invalid amount" });
+    }
+
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+
+      const walletRes = await client.query(
+        `SELECT balance FROM wallets WHERE user_id = $1 FOR UPDATE`,
+        [userId]
+      );
+
+      if (walletRes.rows.length === 0) {
+        throw new Error("Wallet not found");
+      }
+
+      if (Number(walletRes.rows[0].balance) < amount) {
+        throw new Error("Insufficient balance");
+      }
+
+      await client.query(
+        `UPDATE wallets SET balance = balance - $1 WHERE user_id = $2`,
+        [amount, userId]
+      );
+
+      await client.query(
+        `INSERT INTO transactions (user_id, type, amount, status)
+         VALUES ($1, 'WITHDRAWAL', $2, 'COMPLETED')`,
+        [userId, amount]
+      );
+
+      await client.query("COMMIT");
+
+      res.json({ success: true, message: "Withdrawal successful" });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};

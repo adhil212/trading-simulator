@@ -295,6 +295,44 @@ class PriceEngine extends EventEmitter {
     return this.priceHistory[symbol].slice(-limit);
   }
 
+  getCandles(symbol, intervalSeconds = 300, limit = 200) {
+    if (!this.priceHistory[symbol]) {
+      throw new Error(`Symbol ${symbol} not found`);
+    }
+    const ticks = this.priceHistory[symbol];
+    if (ticks.length === 0) return [];
+
+    const buckets = new Map();
+
+    for (let i = 0; i < ticks.length; i++) {
+      const tick = ticks[i];
+      const tickTime = Math.floor(tick.time.getTime() / 1000);
+      const bucket = Math.floor(tickTime / intervalSeconds) * intervalSeconds;
+      const tickHigh = Math.max(tick.open, tick.close);
+      const tickLow = Math.min(tick.open, tick.close);
+      const volDelta = i > 0 ? tick.volume - ticks[i - 1].volume : tick.volume;
+
+      if (!buckets.has(bucket)) {
+        buckets.set(bucket, {
+          time: bucket,
+          open: tick.open,
+          high: tickHigh,
+          low: tickLow,
+          close: tick.close,
+          volume: volDelta,
+        });
+      } else {
+        const c = buckets.get(bucket);
+        c.high = Math.max(c.high, tickHigh);
+        c.low = Math.min(c.low, tickLow);
+        c.close = tick.close;
+        c.volume += volDelta;
+      }
+    }
+
+    return Array.from(buckets.values()).sort((a, b) => a.time - b.time).slice(-limit);
+  }
+
   getAssetInfo(symbol) {
     if (!this.assets[symbol]) {
       throw new Error(`Symbol ${symbol} not found`);

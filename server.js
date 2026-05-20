@@ -17,10 +17,10 @@ dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json());
-// Existing routes
+
 app.use("/api/auth", authRoutes);
 app.use("/api/wallet", walletRoutes);
-// Market section integration
+// Market  integration
 const priceEngine = new PriceEngine();
 priceEngine.start();
 
@@ -28,7 +28,7 @@ let shuttingDown = false;
 const shutdown = () => {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log('\n🛑 Shutting down server...');
+  console.log(' Shutting down server...');
   priceEngine.savePrices();
 };
 process.on('SIGINT', () => { shutdown(); process.exit(0); });
@@ -42,7 +42,7 @@ app.use("/api/trading", createTradingRouter(tradingController));
 
 const portfolioController = createPortfolioController(priceEngine);
 app.use("/api/portfolio", createPortfolioRouter(portfolioController));
-// Root route
+
 app.get("/", (req, res) => {
   res.send("Server running...");
 });
@@ -54,7 +54,7 @@ const server = app.listen(PORT, () => {
 // Setup real-time WebSocket updates for market data
 const io = new Server(server, {
   cors: {
-    origin: "*", // Restrict to frontend URL in production
+    origin: "*",
     methods: ["GET", "POST"]
   }
 });
