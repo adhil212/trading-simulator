@@ -1,4 +1,4 @@
 node_modules/
 .env
 price_snapshot.json
-api.md/
+api.md

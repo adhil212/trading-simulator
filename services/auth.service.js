@@ -1,6 +1,9 @@
 import bcrypt from "bcrypt";
 import validator from "validator";
+import { OAuth2Client } from "google-auth-library";
 import db from "../config/db.js";
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const BCRYPT_ROUNDS = Number(process.env.BCRYPT_ROUNDS || 12);
 
@@ -43,7 +46,7 @@ function assertStrongPassword(password) {
 async function ensureWallet(client, userId) {
   await client.query(
     `INSERT INTO wallets (user_id, balance)
-     SELECT $1, 100000
+     SELECT $1, 1000
      WHERE NOT EXISTS (SELECT 1 FROM wallets WHERE user_id = $1)`,
     [userId]
   );
@@ -91,6 +94,50 @@ export async function registerUser(username, email, password) {
   } finally {
     client.release();
   }
+}
+
+async function ensureWalletNoClient(userId) {
+  await db.query(
+    `INSERT INTO wallets (user_id, balance)
+     SELECT $1, 1000
+     WHERE NOT EXISTS (SELECT 1 FROM wallets WHERE user_id = $1)`,
+    [userId]
+  );
+}
+
+export async function googleLogin(googleIdToken) {
+  const ticket = await googleClient.verifyIdToken({
+    idToken: googleIdToken,
+    audience: process.env.GOOGLE_CLIENT_ID,
+  });
+  const payload = ticket.getPayload();
+
+  const google_id = payload.sub;
+  const email = payload.email;
+  const name = payload.name;
+  const avatar_url = payload.picture;
+
+  const existing = await db.query(
+    "SELECT id, username, email FROM users WHERE google_id = $1",
+    [google_id]
+  );
+
+  if (existing.rows.length) {
+    return safeUser(existing.rows[0]);
+  }
+
+  const userResult = await db.query(
+    `INSERT INTO users (username, email, google_id, avatar_url)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (email) DO UPDATE SET google_id = EXCLUDED.google_id, avatar_url = EXCLUDED.avatar_url
+     RETURNING id, username, email`,
+    [name, email, google_id, avatar_url]
+  );
+
+  const user = userResult.rows[0];
+  await ensureWalletNoClient(user.id);
+
+  return safeUser(user);
 }
 
 export async function loginUser(email, password) {
