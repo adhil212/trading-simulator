@@ -245,25 +245,55 @@ function calculateDiversificationScore(allocation) {
 
 export async function getPortfolioGrowth(userId, days = 7) {
   try {
-    const result = await db.query(
-      `SELECT 
-         DATE(executed_at) as trade_date,
-         (SELECT balance FROM wallets WHERE user_id = $1) as balance_snapshot
-       FROM trades 
-       WHERE user_id = $1 AND executed_at > NOW() - INTERVAL '1 day' * $2
-       GROUP BY DATE(executed_at), balance_snapshot
-       ORDER BY trade_date ASC`,
-      [userId, days]
-    );
-
     const wallet = await getUserWallet(userId);
     const currentBalance = wallet.balance;
 
-    return {
-      growthData: result.rows.map(row => ({
+    const periodStart = new Date();
+    periodStart.setDate(periodStart.getDate() - days);
+
+    const tradesInPeriod = await db.query(
+      `SELECT 
+         executed_at::date as trade_date,
+         SUM(CASE WHEN type = 'BUY' THEN net_cost ELSE 0 END) as total_spent,
+         SUM(CASE WHEN type = 'SELL' THEN total_value - commission ELSE 0 END) as total_received
+       FROM trades
+       WHERE user_id = $1 AND executed_at > $2
+       GROUP BY executed_at::date
+       ORDER BY trade_date ASC`,
+      [userId, periodStart]
+    );
+
+    const tradesBefore = await db.query(
+      `SELECT 
+         COALESCE(SUM(CASE WHEN type = 'BUY' THEN net_cost ELSE 0 END), 0) as spent_before,
+         COALESCE(SUM(CASE WHEN type = 'SELL' THEN total_value - commission ELSE 0 END), 0) as received_before
+       FROM trades
+       WHERE user_id = $1 AND executed_at <= $2`,
+      [userId, periodStart]
+    );
+
+    const before = tradesBefore.rows[0];
+    const initialDeposit = 1000;
+    const balanceAtStart = initialDeposit - parseFloat(before.spent_before) + parseFloat(before.received_before);
+
+    const growthData = [];
+    let runningBalance = balanceAtStart;
+
+    for (const row of tradesInPeriod.rows) {
+      runningBalance = runningBalance - parseFloat(row.total_spent || 0) + parseFloat(row.total_received || 0);
+      growthData.push({
         date: row.trade_date,
-        balance: parseFloat(row.balance_snapshot || currentBalance)
-      })),
+        balance: Math.round(runningBalance * 100) / 100
+      });
+    }
+
+    growthData.push({
+      date: new Date().toISOString().split('T')[0],
+      balance: currentBalance
+    });
+
+    return {
+      growthData,
       currentBalance: currentBalance.toFixed(2),
       period: `${days} days`
     };
@@ -344,4 +374,3 @@ export async function getPortfolioSummary(priceEngine, userId) {
     throw error;
   }
 }
-

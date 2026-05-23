@@ -6,8 +6,8 @@ export const createTradingController = (priceEngine) => {
       const userId = req.user.id;
       const { symbol, quantity } = req.body;
 
-      if (!symbol || !quantity) {
-        return res.status(400).json({ error: "symbol and quantity are required" });
+      if (!symbol || typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
+        return res.status(400).json({ error: "symbol and positive quantity are required" });
       }
 
       const priceData = priceEngine.getPrice(symbol);
@@ -26,8 +26,8 @@ export const createTradingController = (priceEngine) => {
       const userId = req.user.id;
       const { symbol, quantity } = req.body;
 
-      if (!symbol || !quantity) {
-        return res.status(400).json({ error: "symbol and quantity are required" });
+      if (!symbol || typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
+        return res.status(400).json({ error: "symbol and positive quantity are required" });
       }
 
       const priceData = priceEngine.getPrice(symbol);

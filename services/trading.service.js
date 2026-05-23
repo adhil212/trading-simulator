@@ -3,13 +3,17 @@ import db from "../config/db.js";
 const COMMISSION_RATE = 0;
 
 export async function buyAsset(userId, symbol, quantity, currentPrice) {
+  if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
+    throw new Error("Quantity must be a positive number");
+  }
+
   const client = await db.connect();
 
   try {
     await client.query("BEGIN");
 
-    const walletRes = await db.query(
-      "SELECT id, balance FROM wallets WHERE user_id = $1",
+    const walletRes = await client.query(
+      "SELECT id, balance FROM wallets WHERE user_id = $1 FOR UPDATE",
       [userId]
     );
 
@@ -45,7 +49,7 @@ export async function buyAsset(userId, symbol, quantity, currentPrice) {
     const tradeId = tradeRes.rows[0].id;
 
     const portfolioRes = await client.query(
-      "SELECT id, quantity, entry_price FROM portfolio WHERE user_id = $1 AND symbol = $2",
+      "SELECT id, quantity, entry_price FROM portfolio WHERE user_id = $1 AND symbol = $2 FOR UPDATE",
       [userId, symbol]
     );
 
@@ -60,8 +64,8 @@ export async function buyAsset(userId, symbol, quantity, currentPrice) {
       await client.query(
         `UPDATE portfolio 
          SET quantity = $1, entry_price = $2, current_price = $3, 
-             unrealized_pnl = ($1 * $3) - ($1 * $2),
-             unrealized_pnl_percent = (($3 - $2) / $2 * 100),
+             unrealized_pnl = ($1::numeric * $3::numeric) - ($1::numeric * $2::numeric),
+             unrealized_pnl_percent = (($3::numeric - $2::numeric) / $2::numeric * 100),
              updated_at = CURRENT_TIMESTAMP
          WHERE user_id = $4 AND symbol = $5`,
         [newQuantity, newEntryPrice, currentPrice, userId, symbol]
@@ -73,6 +77,8 @@ export async function buyAsset(userId, symbol, quantity, currentPrice) {
         [userId, symbol, quantity, currentPrice, currentPrice, 0, 0]
       );
     }
+
+    await updatePerformanceMetrics(client, userId);
 
     await client.query("COMMIT");
 
@@ -98,13 +104,17 @@ export async function buyAsset(userId, symbol, quantity, currentPrice) {
 }
 
 export async function sellAsset(userId, symbol, quantity, currentPrice) {
+  if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
+    throw new Error("Quantity must be a positive number");
+  }
+
   const client = await db.connect();
 
   try {
     await client.query("BEGIN");
 
     const portfolioRes = await client.query(
-      "SELECT id, quantity, entry_price FROM portfolio WHERE user_id = $1 AND symbol = $2",
+      "SELECT id, quantity, entry_price, created_at FROM portfolio WHERE user_id = $1 AND symbol = $2 FOR UPDATE",
       [userId, symbol]
     );
 
@@ -131,7 +141,7 @@ export async function sellAsset(userId, symbol, quantity, currentPrice) {
     const profitPercent = (profitPerUnit / entryPrice) * 100;
 
     const walletRes = await client.query(
-      "SELECT id FROM wallets WHERE user_id = $1",
+      "SELECT id FROM wallets WHERE user_id = $1 FOR UPDATE",
       [userId]
     );
 
@@ -153,10 +163,8 @@ export async function sellAsset(userId, symbol, quantity, currentPrice) {
 
     await client.query(
       `INSERT INTO trade_history (user_id, symbol, entry_price, exit_price, quantity, realized_pnl, realized_pnl_percent, entry_date, exit_date)
-       SELECT $1, $2, $3, $4, $5, $6, $7, 
-              (SELECT executed_at FROM trades WHERE id = $8 ORDER BY executed_at ASC LIMIT 1),
-              CURRENT_TIMESTAMP`,
-      [userId, symbol, entryPrice, currentPrice, quantity, totalProfit, profitPercent, tradeId]
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)`,
+      [userId, symbol, entryPrice, currentPrice, quantity, totalProfit, profitPercent, position.created_at]
     );
 
     const newQuantity = availableQty - quantity;
@@ -170,8 +178,8 @@ export async function sellAsset(userId, symbol, quantity, currentPrice) {
       await client.query(
         `UPDATE portfolio 
          SET quantity = $1, current_price = $2,
-             unrealized_pnl = ($1 * $2) - ($1 * entry_price),
-             unrealized_pnl_percent = (($2 - entry_price) / entry_price * 100),
+             unrealized_pnl = ($1::numeric * $2::numeric) - ($1::numeric * entry_price),
+             unrealized_pnl_percent = (($2::numeric - entry_price) / entry_price * 100),
              updated_at = CURRENT_TIMESTAMP
          WHERE user_id = $3 AND symbol = $4`,
         [newQuantity, currentPrice, userId, symbol]
@@ -345,6 +353,16 @@ async function updatePerformanceMetrics(client, userId) {
       "SELECT calculate_performance_metrics($1)",
       [userId]
     );
+
+    await client.query(
+      `UPDATE performance_metrics 
+       SET risk_reward_ratio = CASE 
+         WHEN avg_loss IS NOT NULL AND avg_loss != 0 AND avg_win IS NOT NULL 
+         THEN ROUND(ABS(avg_win / avg_loss)::numeric, 2) 
+         ELSE NULL END
+       WHERE user_id = $1`,
+      [userId]
+    );
   } catch (error) {
     console.error('Error updating performance metrics:', error);
   }
@@ -384,4 +402,3 @@ export async function getTradeStatistics(userId) {
     throw error;
   }
 }
-

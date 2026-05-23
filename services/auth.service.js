@@ -99,7 +99,7 @@ export async function registerUser(username, email, password) {
 async function ensureWalletNoClient(userId) {
   await db.query(
     `INSERT INTO wallets (user_id, balance)
-     SELECT $1, 1000
+     SELECT $1, 10000
      WHERE NOT EXISTS (SELECT 1 FROM wallets WHERE user_id = $1)`,
     [userId]
   );
@@ -126,10 +126,21 @@ export async function googleLogin(googleIdToken) {
     return safeUser(existing.rows[0]);
   }
 
+  const existingByEmail = await db.query(
+    "SELECT id, google_id FROM users WHERE email = $1",
+    [email]
+  );
+
+  if (existingByEmail.rows.length) {
+    if (!existingByEmail.rows[0].google_id) {
+      throw new Error("This email is already registered with a password. Please log in normally.");
+    }
+  }
+
   const userResult = await db.query(
     `INSERT INTO users (username, email, google_id, avatar_url)
      VALUES ($1, $2, $3, $4)
-     ON CONFLICT (email) DO UPDATE SET google_id = EXCLUDED.google_id, avatar_url = EXCLUDED.avatar_url
+     ON CONFLICT (google_id) DO UPDATE SET avatar_url = EXCLUDED.avatar_url
      RETURNING id, username, email`,
     [name, email, google_id, avatar_url]
   );

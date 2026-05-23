@@ -145,8 +145,8 @@ class PriceEngine extends EventEmitter {
     const ask = newPrice + (asset.spread / 2);
 
     const previousPrice = currentPrice.last;
-    const change = newPrice - asset.basePrice;
-    const changePercent = (change / asset.basePrice) * 100;
+    const change = newPrice - previousPrice;
+    const changePercent = (change / previousPrice) * 100;
 
     currentPrice.bid = bid;
     currentPrice.ask = ask;
