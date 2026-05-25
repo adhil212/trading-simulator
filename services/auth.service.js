@@ -46,7 +46,7 @@ function assertStrongPassword(password) {
 async function ensureWallet(client, userId) {
   await client.query(
     `INSERT INTO wallets (user_id, balance)
-     SELECT $1, 1000
+     SELECT $1, 10000
      WHERE NOT EXISTS (SELECT 1 FROM wallets WHERE user_id = $1)`,
     [userId]
   );

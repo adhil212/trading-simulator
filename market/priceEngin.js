@@ -76,7 +76,7 @@ class PriceEngine extends EventEmitter {
 
     this.assets = JSON.parse(JSON.stringify(ASSETS));
     this.priceHistory = {};
-    this.maxHistoryLength = options.maxHistoryLength || 1440;
+    this.maxHistoryLength = options.maxHistoryLength || 27600;
     this.updateInterval = options.updateInterval || 1000;
     this.simulationSpeed = options.simulationSpeed || 1;
 

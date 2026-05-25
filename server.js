@@ -48,7 +48,7 @@ app.get("/", (req, res) => {
 });
 // Start server with Socket.io support
 const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
 });
 // Setup real-time WebSocket updates for market data
@@ -61,3 +61,4 @@ const io = new Server(server, {
 setupSocket(io, priceEngine);
 setupTradingSocket(io, priceEngine);
 setupPortfolioSocket(io, priceEngine);
+
