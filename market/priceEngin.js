@@ -270,7 +270,12 @@ class PriceEngine extends EventEmitter {
   }
 
   stop() {
-    console.warn('Price Engine cannot be manually stopped.');
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    this.isRunning = false;
+    console.log('Price Engine stopped.');
   }
 
   getPrice(symbol) {

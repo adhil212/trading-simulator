@@ -128,13 +128,13 @@ export async function getPortfolioPerformance(userId) {
     const pnlData = pnlResult.rows[0];
 
     return {
-      totalBuys: parseInt(trades.total_buys),
-      totalSells: parseInt(trades.total_sells),
+      totalBuys: parseInt(trades.total_buys, 10),
+      totalSells: parseInt(trades.total_sells, 10),
       totalInvested: totalInvested.toFixed(2),
       totalWithdrawn: totalWithdrawn.toFixed(2),
-      totalClosedTrades: parseInt(pnlData.total_closed_trades),
-      winningTrades: parseInt(pnlData.winning_trades),
-      losingTrades: parseInt(pnlData.losing_trades),
+      totalClosedTrades: parseInt(pnlData.total_closed_trades, 10),
+      winningTrades: parseInt(pnlData.winning_trades, 10),
+      losingTrades: parseInt(pnlData.losing_trades, 10),
       totalRealizedPnL: parseFloat(pnlData.total_realized_pnl || 0).toFixed(2),
       averagePnL: parseFloat(pnlData.avg_pnl || 0).toFixed(2),
       winRate: pnlData.total_closed_trades > 0 
@@ -213,7 +213,7 @@ export async function getDailyStats(userId) {
 
     return result.rows.map(row => ({
       date: row.trade_date,
-      tradeCount: parseInt(row.trade_count),
+      tradeCount: parseInt(row.trade_count, 10),
       buyVolume: parseFloat(row.buy_volume || 0).toFixed(2),
       sellVolume: parseFloat(row.sell_volume || 0).toFixed(2),
       commissions: parseFloat(row.commissions || 0).toFixed(2)
@@ -273,7 +273,7 @@ export async function getPortfolioGrowth(userId, days = 7) {
     );
 
     const before = tradesBefore.rows[0];
-    const initialDeposit = 1000;
+    const initialDeposit = 10000;
     const balanceAtStart = initialDeposit - parseFloat(before.spent_before) + parseFloat(before.received_before);
 
     const growthData = [];

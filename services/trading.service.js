@@ -1,10 +1,14 @@
 import db from "../config/db.js";
+import { MAX_TRADE_QUANTITY } from "../utils/constants.js";
 
 const COMMISSION_RATE = 0;
 
 export async function buyAsset(userId, symbol, quantity, currentPrice) {
   if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
     throw new Error("Quantity must be a positive number");
+  }
+  if (quantity > MAX_TRADE_QUANTITY) {
+    throw new Error(`Quantity cannot exceed ${MAX_TRADE_QUANTITY}`);
   }
 
   const client = await db.connect();
@@ -107,11 +111,21 @@ export async function sellAsset(userId, symbol, quantity, currentPrice) {
   if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
     throw new Error("Quantity must be a positive number");
   }
+  if (quantity > MAX_TRADE_QUANTITY) {
+    throw new Error(`Quantity cannot exceed ${MAX_TRADE_QUANTITY}`);
+  }
 
   const client = await db.connect();
 
   try {
     await client.query("BEGIN");
+
+    const walletRes = await client.query(
+      "SELECT id FROM wallets WHERE user_id = $1 FOR UPDATE",
+      [userId]
+    );
+
+    const walletId = walletRes.rows[0].id;
 
     const portfolioRes = await client.query(
       "SELECT id, quantity, entry_price, created_at FROM portfolio WHERE user_id = $1 AND symbol = $2 FOR UPDATE",
@@ -139,13 +153,6 @@ export async function sellAsset(userId, symbol, quantity, currentPrice) {
     const profitPerUnit = currentPrice - entryPrice;
     const totalProfit = profitPerUnit * quantity;
     const profitPercent = (profitPerUnit / entryPrice) * 100;
-
-    const walletRes = await client.query(
-      "SELECT id FROM wallets WHERE user_id = $1 FOR UPDATE",
-      [userId]
-    );
-
-    const walletId = walletRes.rows[0].id;
 
     await client.query(
       "UPDATE wallets SET balance = balance + $1 WHERE id = $2",
@@ -274,7 +281,7 @@ export async function getTradeHistory(userId, limit = 50, offset = 0) {
 
     return {
       trades: result.rows,
-      total: parseInt(countRes.rows[0].total),
+      total: parseInt(countRes.rows[0].total, 10),
       limit,
       offset
     };
@@ -303,7 +310,7 @@ export async function getClosedTrades(userId, limit = 50, offset = 0) {
 
     return {
       closedTrades: result.rows,
-      total: parseInt(countRes.rows[0].total),
+      total: parseInt(countRes.rows[0].total, 10),
       limit,
       offset
     };
@@ -387,14 +394,14 @@ export async function getTradeStatistics(userId) {
 
     return {
       period: "Last 7 days",
-      totalBuys: parseInt(stats.total_buys),
-      totalSells: parseInt(stats.total_sells),
-      totalTrades: parseInt(stats.total_trades),
+      totalBuys: parseInt(stats.total_buys, 10),
+      totalSells: parseInt(stats.total_sells, 10),
+      totalTrades: parseInt(stats.total_trades, 10),
       totalBought: parseFloat(stats.total_bought || 0).toFixed(2),
       totalSold: parseFloat(stats.total_sold || 0).toFixed(2),
       totalCommissions: parseFloat(stats.total_commissions || 0).toFixed(2),
       averageTradeSize: stats.total_trades > 0 
-        ? (((parseFloat(stats.total_bought || 0) + parseFloat(stats.total_sold || 0)) / (parseInt(stats.total_trades) * 2))).toFixed(2)
+        ? (((parseFloat(stats.total_bought || 0) + parseFloat(stats.total_sold || 0)) / (parseInt(stats.total_trades, 10) * 2))).toFixed(2)
         : '0.00'
     };
   } catch (error) {

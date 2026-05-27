@@ -96,21 +96,15 @@ export async function registerUser(username, email, password) {
   }
 }
 
-async function ensureWalletNoClient(userId) {
-  await db.query(
-    `INSERT INTO wallets (user_id, balance)
-     SELECT $1, 10000
-     WHERE NOT EXISTS (SELECT 1 FROM wallets WHERE user_id = $1)`,
-    [userId]
-  );
-}
-
 export async function googleLogin(googleIdToken) {
   const ticket = await googleClient.verifyIdToken({
     idToken: googleIdToken,
     audience: process.env.GOOGLE_CLIENT_ID,
   });
   const payload = ticket.getPayload();
+  if (!payload) {
+    throw new Error("Invalid Google token");
+  }
 
   const google_id = payload.sub;
   const email = payload.email;
@@ -137,18 +131,31 @@ export async function googleLogin(googleIdToken) {
     }
   }
 
-  const userResult = await db.query(
-    `INSERT INTO users (username, email, google_id, avatar_url)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (google_id) DO UPDATE SET avatar_url = EXCLUDED.avatar_url
-     RETURNING id, username, email`,
-    [name, email, google_id, avatar_url]
-  );
+  const client = await db.connect();
 
-  const user = userResult.rows[0];
-  await ensureWalletNoClient(user.id);
+  try {
+    await client.query("BEGIN");
 
-  return safeUser(user);
+    const userResult = await client.query(
+      `INSERT INTO users (username, email, google_id, avatar_url)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (google_id) DO UPDATE SET avatar_url = EXCLUDED.avatar_url
+       RETURNING id, username, email`,
+      [name, email, google_id, avatar_url]
+    );
+
+    const user = userResult.rows[0];
+    await ensureWallet(client, user.id);
+
+    await client.query("COMMIT");
+
+    return safeUser(user);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function loginUser(email, password) {

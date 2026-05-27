@@ -1,13 +1,20 @@
 import express from "express"
+import rateLimit from "express-rate-limit"
 import {register,login,googleAuth} from "../controllers/auth.service.js"
 
-const router=express.Router()
+const router = express.Router()
 
-router.post("/register",register)
-router.post("/login", login);
-router.post("/google", googleAuth);
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: "Too many attempts. Try again later." }
+})
 
-export default router;
+router.post("/register", authLimiter, register)
+router.post("/login", authLimiter, login)
+router.post("/google", authLimiter, googleAuth)
+
+export default router
 
 
 

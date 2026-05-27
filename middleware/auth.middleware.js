@@ -1,18 +1,21 @@
 import jwt from "jsonwebtoken"
 
-function authmiddleware (req,res,next){
-     const authheader =req.headers.authorization
-     if(!authheader) return res.status(401).json({ error: "No token" });
-     const token = authheader.split(" ")[1]; 
+function authMiddleware(req, res, next) {
+  const authHeader = req.headers.authorization
+  if (!authHeader) return res.status(401).json({ error: "No token" });
 
-     try {
-        const decoded=jwt.verify(token,process.env.JWT_SECRET)
-        req.user=decoded
-        next()
+  const parts = authHeader.split(" ");
+  if (parts.length !== 2 || !parts[1]) {
+    return res.status(401).json({ error: "Invalid token format" });
+  }
 
-        
-     } catch (error) {
-        res.status(401).json({ error: "Invalid token" });
-     }
+  const token = parts[1];
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET)
+    req.user = decoded
+    next()
+  } catch (error) {
+    res.status(401).json({ error: "Invalid token" });
+  }
 }
-export default authmiddleware;
+export default authMiddleware;

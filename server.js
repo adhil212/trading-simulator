@@ -7,12 +7,13 @@ import walletRoutes from "./routers/wallet.routes.js";
 import PriceEngine from "./market/priceEngin.js";
 import priceRouter from "./market/pricerouter.js";
 import setupSocket from "./market/socket.js";
-import setupTradingSocket from "./market/tradingSocket.js";
+// import setupTradingSocket from "./market/tradingSocket.js";
 import setupPortfolioSocket from "./market/portfolioSocket.js";
 import { createTradingController } from "./controllers/trading.controller.js";
 import createTradingRouter from "./routers/trading.routes.js";
 import { createPortfolioController } from "./controllers/portfolio.controller.js";
 import createPortfolioRouter from "./routers/portfolio.routes.js";
+import db from "./config/db.js";
 dotenv.config();
 const app = express();
 app.use(cors());
@@ -20,20 +21,30 @@ app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/wallet", walletRoutes);
-// Market  integration
+// Market integration
 const priceEngine = new PriceEngine();
 priceEngine.start();
 
-let shuttingDown = false;
 const shutdown = () => {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  console.log(' Shutting down server...');
+  console.log('Shutting down server...');
+  priceEngine.stop();
   priceEngine.savePrices();
+  if (typeof io !== 'undefined') io.close();
+  if (typeof server !== 'undefined') server.close();
+  db.end().catch(() => {});
+  process.exit(0);
 };
-process.on('SIGINT', () => { shutdown(); process.exit(0); });
-process.on('SIGTERM', () => { shutdown(); process.exit(0); });
-process.on('exit', shutdown);
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  shutdown();
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+  shutdown();
+});
 
 app.use("/api/market", priceRouter(priceEngine));
 
@@ -59,6 +70,6 @@ const io = new Server(server, {
   }
 });
 setupSocket(io, priceEngine);
-setupTradingSocket(io, priceEngine);
+// setupTradingSocket(io, priceEngine);
 setupPortfolioSocket(io, priceEngine);
 

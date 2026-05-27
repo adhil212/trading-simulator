@@ -1,6 +1,7 @@
 import db from "../config/db.js";
 import Razorpay from "razorpay";
 import crypto from "crypto";
+import { MAX_DEPOSIT_AMOUNT, MAX_WITHDRAWAL_AMOUNT } from "../utils/constants.js";
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
@@ -14,6 +15,9 @@ export const createDepositOrder = async (req, res) => {
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: "Invalid amount" });
+    }
+    if (amount > MAX_DEPOSIT_AMOUNT) {
+      return res.status(400).json({ error: `Deposit amount cannot exceed ${MAX_DEPOSIT_AMOUNT}` });
     }
 
     const order = await razorpay.orders.create({
@@ -103,6 +107,9 @@ export const withdraw = async (req, res) => {
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: "Invalid amount" });
+    }
+    if (amount > MAX_WITHDRAWAL_AMOUNT) {
+      return res.status(400).json({ error: `Withdrawal amount cannot exceed ${MAX_WITHDRAWAL_AMOUNT}` });
     }
 
     const client = await db.connect();

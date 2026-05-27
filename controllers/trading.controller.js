@@ -1,4 +1,5 @@
 import * as TradingService from "../services/trading.service.js";
+import { MAX_TRADE_QUANTITY } from "../utils/constants.js";
 
 export const createTradingController = (priceEngine) => {
   const buy = async (req, res) => {
@@ -8,6 +9,9 @@ export const createTradingController = (priceEngine) => {
 
       if (!symbol || typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
         return res.status(400).json({ error: "symbol and positive quantity are required" });
+      }
+      if (quantity > MAX_TRADE_QUANTITY) {
+        return res.status(400).json({ error: `Quantity cannot exceed ${MAX_TRADE_QUANTITY}` });
       }
 
       const priceData = priceEngine.getPrice(symbol);
@@ -28,6 +32,9 @@ export const createTradingController = (priceEngine) => {
 
       if (!symbol || typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
         return res.status(400).json({ error: "symbol and positive quantity are required" });
+      }
+      if (quantity > MAX_TRADE_QUANTITY) {
+        return res.status(400).json({ error: `Quantity cannot exceed ${MAX_TRADE_QUANTITY}` });
       }
 
       const priceData = priceEngine.getPrice(symbol);
@@ -54,8 +61,8 @@ export const createTradingController = (priceEngine) => {
   const tradeHistory = async (req, res) => {
     try {
       const userId = req.user.id;
-      const limit = parseInt(req.query.limit) || 50;
-      const offset = parseInt(req.query.offset) || 0;
+      const limit = parseInt(req.query.limit, 10) || 50;
+      const offset = parseInt(req.query.offset, 10) || 0;
       const result = await TradingService.getTradeHistory(userId, limit, offset);
       res.json(result);
     } catch (error) {
@@ -66,8 +73,8 @@ export const createTradingController = (priceEngine) => {
   const closedTrades = async (req, res) => {
     try {
       const userId = req.user.id;
-      const limit = parseInt(req.query.limit) || 50;
-      const offset = parseInt(req.query.offset) || 0;
+      const limit = parseInt(req.query.limit, 10) || 50;
+      const offset = parseInt(req.query.offset, 10) || 0;
       const result = await TradingService.getClosedTrades(userId, limit, offset);
       res.json(result);
     } catch (error) {

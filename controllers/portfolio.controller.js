@@ -54,7 +54,7 @@ export const createPortfolioController = (priceEngine) => {
   const growth = async (req, res) => {
     try {
       const userId = req.user.id;
-      const days = parseInt(req.query.days) || 7;
+      const days = parseInt(req.query.days, 10) || 7;
       const result = await PortfolioService.getPortfolioGrowth(userId, days);
       res.json(result);
     } catch (error) {
@@ -65,7 +65,7 @@ export const createPortfolioController = (priceEngine) => {
   const topAssets = async (req, res) => {
     try {
       const userId = req.user.id;
-      const limit = parseInt(req.query.limit) || 5;
+      const limit = parseInt(req.query.limit, 10) || 5;
       const result = await PortfolioService.getTopPerformingAssets(userId, limit);
       res.json(result);
     } catch (error) {
@@ -76,7 +76,7 @@ export const createPortfolioController = (priceEngine) => {
   const worstAssets = async (req, res) => {
     try {
       const userId = req.user.id;
-      const limit = parseInt(req.query.limit) || 5;
+      const limit = parseInt(req.query.limit, 10) || 5;
       const result = await PortfolioService.getWorstPerformingAssets(userId, limit);
       res.json(result);
     } catch (error) {

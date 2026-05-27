@@ -11,9 +11,9 @@ export default (io, priceEngine) => {
       socket.emit('priceData', price);
     });
 
-    socket.on('getAllPrices', () => {
-      socket.emit('allPrices', priceEngine.getAllPrices());
-    });
+    // socket.on('getAllPrices', () => {
+    //   socket.emit('allPrices', priceEngine.getAllPrices());
+    // });
 
     socket.on('disconnect', () => {
       console.log('Client disconnected:', socket.id);
