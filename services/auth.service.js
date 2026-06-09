@@ -18,6 +18,7 @@ function safeUser(user) {
     id: user.id,
     username: user.username,
     email: user.email,
+    is_admin: user.is_admin || false,
   };
 }
 
@@ -78,7 +79,7 @@ export async function registerUser(username, email, password) {
     const userResult = await client.query(
       `INSERT INTO users (username, email, password)
        VALUES ($1, $2, $3)
-       RETURNING id, username, email`,
+       RETURNING id, username, email, is_admin`,
       [cleanUsername, normalizedEmail, passwordHash]
     );
 
@@ -112,7 +113,7 @@ export async function googleLogin(googleIdToken) {
   const avatar_url = payload.picture;
 
   const existing = await db.query(
-    "SELECT id, username, email FROM users WHERE google_id = $1",
+    "SELECT id, username, email, is_admin FROM users WHERE google_id = $1",
     [google_id]
   );
 
@@ -140,7 +141,7 @@ export async function googleLogin(googleIdToken) {
       `INSERT INTO users (username, email, google_id, avatar_url)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (google_id) DO UPDATE SET avatar_url = EXCLUDED.avatar_url
-       RETURNING id, username, email`,
+       RETURNING id, username, email, is_admin`,
       [name, email, google_id, avatar_url]
     );
 
@@ -163,7 +164,7 @@ export async function loginUser(email, password) {
   assertValidEmail(normalizedEmail);
 
   const result = await db.query(
-    `SELECT id, username, email, password
+    `SELECT id, username, email, password, is_admin
      FROM users
      WHERE email = $1`,
     [normalizedEmail]
