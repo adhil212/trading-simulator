@@ -2,115 +2,149 @@ import EventEmitter from "events";
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs';
+import * as AdminService from "../services/admin.service.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const SNAPSHOT_PATH = join(__dirname, 'price_snapshot.json');
 
-const ASSETS = {
-  EUR_USD: {
-    name: 'EUR/USD',
-    type: 'forex',
-    basePrice: 1.0850,
-    volatility: 0.008,
-    trend: 0.0002,
-    maxTrend: 0.0008,
-    minTrend: -0.0008,
-    spread: 0.0003,
-    trending: true,
-    trendStrength: 0.5
-  },
-  GOLD_USD: {
-    name: 'Gold (XAU/USD)',
-    type: 'commodity',
-    basePrice: 2050,
-    volatility: 0.002,
-    trend: 0.0001,
-    maxTrend: 0.0006,
-    minTrend: -0.0006,
-    spread: 0.05,
-    trending: false,
-    trendStrength: 0.3
-  },
-  BTC_USD: {
-    name: 'Bitcoin (BTC/USD)',
-    type: 'crypto',
-    basePrice: 45000,
-    volatility: 0.005,
-    trend: 0.0003,
-    maxTrend: 0.002,
-    minTrend: -0.002,
-    spread: 5,
-    trending: true,
-    trendStrength: 0.7
-  },
-  SPX: {
-    name: 'S&P 500 Index',
-    type: 'index',
-    basePrice: 5200,
-    volatility: 0.015,
-    trend: 0.00008,
-    maxTrend: 0.0005,
-    minTrend: -0.0005,
-    spread: 0.5,
-    trending: true,
-    trendStrength: 0.4
-  },
-  OIL_USD: {
-    name: 'Crude Oil (WTI)',
-    type: 'commodity',
-    basePrice: 82.5,
-    volatility: 0.025,
-    trend: 0.0002,
-    maxTrend: 0.0012,
-    minTrend: -0.0012,
-    spread: 0.02,
-    trending: false,
-    trendStrength: 0.45
-  }
-};
+
 
 class PriceEngine extends EventEmitter {
   constructor(options = {}) {
     super();
 
-    this.assets = JSON.parse(JSON.stringify(ASSETS));
+    this.assets = {};
     this.priceHistory = {};
+    this.currentPrices = {};
     this.maxHistoryLength = options.maxHistoryLength || 27600;
     this.updateInterval = options.updateInterval || 1000;
     this.simulationSpeed = options.simulationSpeed || 1;
-
-    Object.keys(this.assets).forEach(symbol => {
-      this.priceHistory[symbol] = [];
-    });
-
     this.isRunning = false;
     this.timer = null;
+  }
 
-    this.currentPrices = {};
+  async init() {
+    await this.loadAssetsFromDB();
     this.initializePrices();
   }
 
-  initializePrices() {
-    Object.keys(this.assets).forEach(symbol => {
-      const asset = this.assets[symbol];
-      this.currentPrices[symbol] = {
-        symbol,
-        name: asset.name,
-        bid: asset.basePrice - (asset.spread / 2),
-        ask: asset.basePrice + (asset.spread / 2),
-        last: asset.basePrice,
-        change: 0,
-        changePercent: 0,
-        high: asset.basePrice,
-        low: asset.basePrice,
-        volume: 0,
-        timestamp: new Date(),
-        volatility: asset.volatility
-      };
-    });
+  async loadAssetsFromDB() {
+    try {
+      const dbAssets = await AdminService.getAssetsFromDB();
+      this.assets = {};
+      for (const row of dbAssets) {
+        this.assets[row.symbol] = {
+          name: row.name,
+          type: row.type,
+          basePrice: parseFloat(row.base_price),
+          volatility: parseFloat(row.volatility),
+          trend: parseFloat(row.trend),
+          maxTrend: parseFloat(row.max_trend),
+          minTrend: parseFloat(row.min_trend),
+          spread: parseFloat(row.spread),
+          trending: row.trending,
+          trendStrength: parseFloat(row.trend_strength)
+        };
+        this.priceHistory[row.symbol] = [];
+      }
+      if (dbAssets.length === 0) {
+        console.warn('Assets table is empty. Add assets via admin UI.');
+      }
+      console.log(`Loaded ${Object.keys(this.assets).length} assets from DB`);
+    } catch (err) {
+      console.error('Failed to load assets from DB:', err.message);
+      this.assets = {};
+    }
+  }
 
+  initializePrices() {
+    Object.keys(this.assets).forEach(symbol => this.initializePriceForSymbol(symbol));
     this.loadPrices();
+  }
+
+  initializePriceForSymbol(symbol) {
+    const asset = this.assets[symbol];
+    if (!asset) return;
+    this.currentPrices[symbol] = {
+      symbol,
+      name: asset.name,
+      bid: asset.basePrice - (asset.spread / 2),
+      ask: asset.basePrice + (asset.spread / 2),
+      last: asset.basePrice,
+      change: 0,
+      changePercent: 0,
+      high: asset.basePrice,
+      low: asset.basePrice,
+      volume: 0,
+      timestamp: new Date(),
+      volatility: asset.volatility
+    };
+  }
+
+  async addAsset(data) {
+    if (this.assets[data.symbol]) {
+      throw new Error(`Symbol ${data.symbol} already exists`);
+    }
+    const row = await AdminService.insertAsset({
+      symbol: data.symbol,
+      name: data.name,
+      type: data.type,
+      base_price: data.basePrice,
+      volatility: data.volatility,
+      trend: data.trend || 0,
+      max_trend: data.maxTrend,
+      min_trend: data.minTrend,
+      spread: data.spread,
+      trending: data.trending || false,
+      trend_strength: data.trendStrength != null ? data.trendStrength : 0.5
+    });
+    if (!row) throw new Error(`Symbol ${data.symbol} already exists in DB`);
+
+    this.assets[data.symbol] = {
+      name: row.name,
+      type: row.type,
+      basePrice: parseFloat(row.base_price),
+      volatility: parseFloat(row.volatility),
+      trend: parseFloat(row.trend),
+      maxTrend: parseFloat(row.max_trend),
+      minTrend: parseFloat(row.min_trend),
+      spread: parseFloat(row.spread),
+      trending: row.trending,
+      trendStrength: parseFloat(row.trend_strength)
+    };
+    this.priceHistory[data.symbol] = [];
+    this.initializePriceForSymbol(data.symbol);
+    return { symbol: data.symbol, ...this.assets[data.symbol] };
+  }
+
+  async updateAsset(symbol, data) {
+    if (!this.assets[symbol]) throw new Error(`Symbol ${symbol} not found`);
+    const dbData = {};
+    const fieldMap = {
+      name: 'name', type: 'type', basePrice: 'base_price',
+      volatility: 'volatility', trend: 'trend',
+      maxTrend: 'max_trend', minTrend: 'min_trend',
+      spread: 'spread', trending: 'trending',
+      trendStrength: 'trend_strength'
+    };
+    for (const [key, dbKey] of Object.entries(fieldMap)) {
+      if (data[key] !== undefined) dbData[dbKey] = data[key];
+    }
+    await AdminService.updateAssetInDB(symbol, dbData);
+    for (const [key, dbKey] of Object.entries(fieldMap)) {
+      if (data[key] !== undefined) this.assets[symbol][key] = data[key];
+    }
+    return { symbol, ...this.assets[symbol] };
+  }
+
+  async removeAsset(symbol) {
+    if (!this.assets[symbol]) throw new Error(`Symbol ${symbol} not found`);
+    await AdminService.deleteAsset(symbol);
+    delete this.assets[symbol];
+    delete this.currentPrices[symbol];
+    delete this.priceHistory[symbol];
+    return { symbol, removed: true };
   }
 
   gaussianRandom() {
@@ -197,7 +231,7 @@ class PriceEngine extends EventEmitter {
 
     this.isRunning = true;
     console.log('Price Engine Started');
-    console.log('Market Simulation: EUR/USD, Gold, Bitcoin, S&P 500, Crude Oil');
+    console.log(`Simulating ${Object.keys(this.assets).length} assets`);
     console.log('Update Interval: ' + this.updateInterval + 'ms');
 
     this.timer = setInterval(() => {
@@ -276,6 +310,19 @@ class PriceEngine extends EventEmitter {
     }
     this.isRunning = false;
     console.log('Price Engine stopped.');
+  }
+
+  setPrice(symbol, price) {
+    if (!this.currentPrices[symbol]) {
+      throw new Error(`Symbol ${symbol} not found`);
+    }
+    const current = this.currentPrices[symbol];
+    const asset = this.assets[symbol];
+    current.last = price;
+    current.bid = price - (asset.spread / 2);
+    current.ask = price + (asset.spread / 2);
+    current.timestamp = new Date();
+    return current;
   }
 
   getPrice(symbol) {

@@ -13,6 +13,8 @@ import { createTradingController } from "./controllers/trading.controller.js";
 import createTradingRouter from "./routers/trading.routes.js";
 import { createPortfolioController } from "./controllers/portfolio.controller.js";
 import createPortfolioRouter from "./routers/portfolio.routes.js";
+import adminRoutes from "./routers/admin.routes.js";
+import { createAdminController } from "./controllers/admin.controller.js";
 import db from "./config/db.js";
 dotenv.config();
 const app = express();
@@ -23,6 +25,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/wallet", walletRoutes);
 // Market integration
 const priceEngine = new PriceEngine();
+await priceEngine.init();
 priceEngine.start();
 
 const shutdown = () => {
@@ -53,6 +56,9 @@ app.use("/api/trading", createTradingRouter(tradingController));
 
 const portfolioController = createPortfolioController(priceEngine);
 app.use("/api/portfolio", createPortfolioRouter(portfolioController));
+
+const adminController = createAdminController(priceEngine);
+app.use("/api/admin", adminRoutes(adminController));
 
 app.get("/", (req, res) => {
   res.send("Server running...");
