@@ -24,8 +24,9 @@ export function createAdminController(priceEngine) {
       const wallet = await AdminService.getUserWallet(userId);
       const portfolio = await AdminService.getUserPortfolio(userId);
       const trades = await AdminService.getUserTrades(userId, 50, 0);
+      const transactionsRes = await AdminService.getUserTransactions(userId, 50, 0);
 
-      res.json({ user, wallet, portfolio, trades });
+      res.json({ user, wallet, portfolio, trades, transactions: transactionsRes });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -55,8 +56,9 @@ export function createAdminController(priceEngine) {
       const stats = await AdminService.getPlatformStats();
       const topTraders = await AdminService.getTopTraders(10);
       const engineStatus = priceEngine ? priceEngine.getStatus() : null;
+      const totalCommissions = await AdminService.getTotalCommissions();
 
-      res.json({ ...stats, topTraders, engineStatus });
+      res.json({ ...stats, totalCommissions, topTraders, engineStatus });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -123,11 +125,121 @@ export function createAdminController(priceEngine) {
     }
   };
 
+  const getCommissions = async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit, 10) || 50;
+      const offset = parseInt(req.query.offset, 10) || 0;
+      const result = await AdminService.getCommissionHistory(limit, offset);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  };
+
+  const getTransactions = async (req, res) => {
+    try {
+      const filters = {
+        type: req.query.type || null,
+        status: req.query.status || null,
+        user_id: req.query.user_id || null,
+        date_from: req.query.date_from || null,
+        date_to: req.query.date_to || null,
+      };
+      const limit = parseInt(req.query.limit, 10) || 50;
+      const offset = parseInt(req.query.offset, 10) || 0;
+      const result = await AdminService.getAllTransactions(filters, limit, offset);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  };
+
+  const getWithdrawalRequests = async (req, res) => {
+    try {
+      const status = req.query.status || "PENDING";
+      const limit = parseInt(req.query.limit, 10) || 50;
+      const offset = parseInt(req.query.offset, 10) || 0;
+      const result = await AdminService.getWithdrawalRequests(status, limit, offset);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  };
+
+  const approveWithdrawal = async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const adminId = req.user.id;
+      const result = await AdminService.approveWithdrawal(id, adminId);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  };
+
+  const rejectWithdrawal = async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const result = await AdminService.rejectWithdrawal(id);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  };
+
+  const rechargeUser = async (req, res) => {
+    try {
+      const userId = parseInt(req.params.id, 10);
+      const { amount, reason } = req.body;
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ error: "Invalid amount" });
+      }
+      const result = await AdminService.rechargeUser(userId, amount, reason || "Admin recharge");
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  };
+
+  const deductUser = async (req, res) => {
+    try {
+      const userId = parseInt(req.params.id, 10);
+      const { amount, reason } = req.body;
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ error: "Invalid amount" });
+      }
+      const result = await AdminService.deductUser(userId, amount, reason || "Admin deduction");
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  };
+
+  const getUserTransactions = async (req, res) => {
+    try {
+      const userId = parseInt(req.params.id, 10);
+      const limit = parseInt(req.query.limit, 10) || 50;
+      const offset = parseInt(req.query.offset, 10) || 0;
+      const result = await AdminService.getUserTransactions(userId, limit, offset);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  };
+
   return {
     getUsers,
     getUserById,
     getAllTrades,
     getStats,
+    getCommissions,
+    getTransactions,
+    getWithdrawalRequests,
+    approveWithdrawal,
+    rejectWithdrawal,
+    rechargeUser,
+    deductUser,
+    getUserTransactions,
     getMarketStatus,
     createAsset,
     updateAsset,

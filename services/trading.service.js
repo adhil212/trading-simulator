@@ -1,7 +1,8 @@
 import db from "../config/db.js";
 import { MAX_TRADE_QUANTITY } from "../utils/constants.js";
 
-const COMMISSION_RATE = 0;
+const COMMISSION_RATE = 0.001;
+const PLATFORM_ACCOUNT_ID = parseInt(process.env.PLATFORM_ACCOUNT_ID, 10) ?? null;
 
 export async function buyAsset(userId, symbol, quantity, currentPrice) {
   if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
@@ -51,6 +52,18 @@ export async function buyAsset(userId, symbol, quantity, currentPrice) {
     );
 
     const tradeId = tradeRes.rows[0].id;
+
+    if (PLATFORM_ACCOUNT_ID && commission > 0) {
+      await client.query(
+        "UPDATE wallets SET balance = balance + $1 WHERE user_id = $2",
+        [commission, PLATFORM_ACCOUNT_ID]
+      );
+      await client.query(
+        `INSERT INTO commission_history (trade_id, user_id, symbol, amount, type)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [tradeId, userId, symbol, commission, "BUY"]
+      );
+    }
 
     const portfolioRes = await client.query(
       "SELECT id, quantity, entry_price FROM portfolio WHERE user_id = $1 AND symbol = $2 FOR UPDATE",
@@ -167,6 +180,18 @@ export async function sellAsset(userId, symbol, quantity, currentPrice) {
     );
 
     const tradeId = tradeRes.rows[0].id;
+
+    if (PLATFORM_ACCOUNT_ID && commission > 0) {
+      await client.query(
+        "UPDATE wallets SET balance = balance + $1 WHERE user_id = $2",
+        [commission, PLATFORM_ACCOUNT_ID]
+      );
+      await client.query(
+        `INSERT INTO commission_history (trade_id, user_id, symbol, amount, type)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [tradeId, userId, symbol, commission, "SELL"]
+      );
+    }
 
     await client.query(
       `INSERT INTO trade_history (user_id, symbol, entry_price, exit_price, quantity, realized_pnl, realized_pnl_percent, entry_date, exit_date)

@@ -10,6 +10,14 @@ export default (controller) => {
   router.get("/trades", adminMiddleware, controller.getAllTrades);
   router.get("/stats", adminMiddleware, controller.getStats);
 
+  router.get("/commissions", adminMiddleware, controller.getCommissions);
+  router.get("/transactions", adminMiddleware, controller.getTransactions);
+  router.get("/withdrawal-requests", adminMiddleware, controller.getWithdrawalRequests);
+  router.post("/withdrawal-requests/:id/approve", adminMiddleware, controller.approveWithdrawal);
+  router.post("/withdrawal-requests/:id/reject", adminMiddleware, controller.rejectWithdrawal);
+  router.post("/users/:id/recharge", adminMiddleware, controller.rechargeUser);
+  router.post("/users/:id/deduct", adminMiddleware, controller.deductUser);
+  router.get("/users/:id/transactions", adminMiddleware, controller.getUserTransactions);
   router.get("/market/status", adminMiddleware, controller.getMarketStatus);
 
   router.post("/assets", adminMiddleware, controller.createAsset);

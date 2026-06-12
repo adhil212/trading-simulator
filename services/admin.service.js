@@ -105,22 +105,20 @@ export async function getAllTrades(filters, limit, offset) {
 
 export async function getPlatformStats() {
   const userRes = await db.query(
-    `SELECT COUNT(*) as total_users,
-            COUNT(*) FILTER (WHERE created_at > CURRENT_TIMESTAMP - INTERVAL '24 hours') as active_today
+    `SELECT COUNT(*) as total_users
      FROM users`
   );
 
   const tradeRes = await db.query(
     `SELECT COUNT(*) as total_trades,
-            COALESCE(SUM(total_value), 0) as total_volume,
-            COALESCE(AVG(price), 0) as avg_price
+            COALESCE(SUM(total_value), 0) as total_volume
      FROM trades`
   );
 
-  const pnlRes = await db.query(
-    `SELECT COALESCE(SUM(realized_pnl), 0) as total_realized_pnl
-     FROM trade_history`
-  );
+  // const pnlRes = await db.query(
+  //   `SELECT COALESCE(SUM(realized_pnl), 0) as total_realized_pnl
+  //    FROM trade_history`
+  // );
 
   const usersOverTime = await db.query(
     `SELECT DATE(created_at) as date, COUNT(*) as count
@@ -141,16 +139,15 @@ export async function getPlatformStats() {
   return {
     users: {
       total: parseInt(userRes.rows[0].total_users, 10),
-      activeToday: parseInt(userRes.rows[0].active_today, 10),
     },
     trades: {
       total: parseInt(tradeRes.rows[0].total_trades, 10),
       totalVolume: parseFloat(tradeRes.rows[0].total_volume).toFixed(2),
-      avgPrice: parseFloat(tradeRes.rows[0].avg_price).toFixed(2),
+      // avgPrice: parseFloat(tradeRes.rows[0].avg_price).toFixed(2),
     },
-    pnl: {
-      totalRealizedPnl: parseFloat(pnlRes.rows[0].total_realized_pnl).toFixed(2),
-    },
+    // pnl: {
+    //   totalRealizedPnl: parseFloat(pnlRes.rows[0].total_realized_pnl).toFixed(2),
+    // },
     charts: {
       usersOverTime: usersOverTime.rows,
       volumeOverTime: volumeOverTime.rows,
@@ -268,6 +265,275 @@ export async function deleteAsset(symbol) {
     [symbol]
   );
   return result.rows[0] || null;
+}
+
+export async function getTotalCommissions() {
+  const result = await db.query(
+    "SELECT COALESCE(SUM(amount), 0) as total FROM commission_history"
+  );
+  return parseFloat(result.rows[0].total);
+}
+
+export async function getCommissionHistory(limit = 50, offset = 0) {
+  const countRes = await db.query(
+    "SELECT COUNT(*) as total FROM commission_history"
+  );
+
+  const result = await db.query(
+    `SELECT ch.id, ch.trade_id, ch.user_id, u.username, ch.symbol, ch.amount, ch.type, ch.created_at
+     FROM commission_history ch
+     JOIN users u ON u.id = ch.user_id
+     ORDER BY ch.created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+
+  return {
+    commissions: result.rows,
+    total: parseInt(countRes.rows[0].total, 10),
+    limit,
+    offset,
+  };
+}
+
+export async function getAllTransactions(filters, limit, offset) {
+  const conditions = [];
+  const params = [];
+  let paramIndex = 1;
+
+  if (filters.type) {
+    conditions.push(`t.type = $${paramIndex++}`);
+    params.push(filters.type);
+  }
+  if (filters.status) {
+    conditions.push(`t.status = $${paramIndex++}`);
+    params.push(filters.status);
+  }
+  if (filters.user_id) {
+    conditions.push(`t.user_id = $${paramIndex++}`);
+    params.push(filters.user_id);
+  }
+  if (filters.date_from) {
+    conditions.push(`t.created_at >= $${paramIndex++}`);
+    params.push(filters.date_from);
+  }
+  if (filters.date_to) {
+    conditions.push(`t.created_at <= $${paramIndex++}`);
+    params.push(filters.date_to);
+  }
+
+  const whereClause = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
+
+  const countRes = await db.query(
+    `SELECT COUNT(*) as total FROM transactions t ${whereClause}`,
+    params
+  );
+
+  const result = await db.query(
+    `SELECT t.id, t.user_id, u.username, t.type, t.amount, t.status, t.details, t.created_at
+     FROM transactions t
+     JOIN users u ON u.id = t.user_id
+     ${whereClause}
+     ORDER BY t.created_at DESC
+     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+    [...params, limit, offset]
+  );
+
+  return {
+    transactions: result.rows,
+    total: parseInt(countRes.rows[0].total, 10),
+    limit,
+    offset,
+  };
+}
+
+export async function getWithdrawalRequests(status = "PENDING", limit = 50, offset = 0) {
+  const countRes = await db.query(
+    `SELECT COUNT(*) as total FROM transactions WHERE type = 'WITHDRAWAL' AND status = $1`,
+    [status]
+  );
+
+  const result = await db.query(
+    `SELECT t.id, t.user_id, u.username, u.email, t.amount, t.status, t.details, t.created_at
+     FROM transactions t
+     JOIN users u ON u.id = t.user_id
+     WHERE t.type = 'WITHDRAWAL' AND t.status = $1
+     ORDER BY t.created_at ASC
+     LIMIT $2 OFFSET $3`,
+    [status, limit, offset]
+  );
+
+  return {
+    requests: result.rows,
+    total: parseInt(countRes.rows[0].total, 10),
+    limit,
+    offset,
+  };
+}
+
+export async function approveWithdrawal(id, adminId) {
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    const txRes = await client.query(
+      `SELECT id, user_id, amount, status FROM transactions WHERE id = $1 AND type = 'WITHDRAWAL' FOR UPDATE`,
+      [id]
+    );
+
+    if (txRes.rows.length === 0) {
+      throw new Error("Withdrawal request not found");
+    }
+
+    const tx = txRes.rows[0];
+    if (tx.status !== "PENDING") {
+      throw new Error(`Withdrawal request is already ${tx.status}`);
+    }
+
+    const walletRes = await client.query(
+      `SELECT balance FROM wallets WHERE user_id = $1 FOR UPDATE`,
+      [tx.user_id]
+    );
+
+    if (walletRes.rows.length === 0) {
+      throw new Error("User wallet not found");
+    }
+
+    if (Number(walletRes.rows[0].balance) < Number(tx.amount)) {
+      throw new Error("Insufficient balance in user wallet");
+    }
+
+    await client.query(
+      `UPDATE wallets SET balance = balance - $1 WHERE user_id = $2`,
+      [tx.amount, tx.user_id]
+    );
+
+    await client.query(
+      `UPDATE transactions SET status = 'COMPLETED' WHERE id = $1`,
+      [id]
+    );
+
+    await client.query("COMMIT");
+
+    return { success: true, message: "Withdrawal approved" };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function rejectWithdrawal(id) {
+  const result = await db.query(
+    `UPDATE transactions SET status = 'REJECTED' WHERE id = $1 AND type = 'WITHDRAWAL' AND status = 'PENDING' RETURNING id`,
+    [id]
+  );
+
+  if (result.rows.length === 0) {
+    throw new Error("Pending withdrawal request not found");
+  }
+
+  return { success: true, message: "Withdrawal rejected" };
+}
+
+export async function rechargeUser(userId, amount, reason) {
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    const walletRes = await client.query(
+      `SELECT id FROM wallets WHERE user_id = $1 FOR UPDATE`,
+      [userId]
+    );
+
+    if (walletRes.rows.length === 0) {
+      throw new Error("User wallet not found");
+    }
+
+    await client.query(
+      `UPDATE wallets SET balance = balance + $1 WHERE user_id = $2`,
+      [amount, userId]
+    );
+
+    await client.query(
+      `INSERT INTO transactions (user_id, type, amount, status, details)
+       VALUES ($1, 'DEPOSIT', $2, 'COMPLETED', $3)`,
+      [userId, amount, JSON.stringify({ reason, admin_action: true })]
+    );
+
+    await client.query("COMMIT");
+
+    return { success: true, message: "Wallet recharged successfully" };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function deductUser(userId, amount, reason) {
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    const walletRes = await client.query(
+      `SELECT balance FROM wallets WHERE user_id = $1 FOR UPDATE`,
+      [userId]
+    );
+
+    if (walletRes.rows.length === 0) {
+      throw new Error("User wallet not found");
+    }
+
+    if (Number(walletRes.rows[0].balance) < amount) {
+      throw new Error("Insufficient balance");
+    }
+
+    await client.query(
+      `UPDATE wallets SET balance = balance - $1 WHERE user_id = $2`,
+      [amount, userId]
+    );
+
+    await client.query(
+      `INSERT INTO transactions (user_id, type, amount, status, details)
+       VALUES ($1, 'WITHDRAWAL', $2, 'COMPLETED', $3)`,
+      [userId, amount, JSON.stringify({ reason, admin_action: true })]
+    );
+
+    await client.query("COMMIT");
+
+    return { success: true, message: "Amount deducted successfully" };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getUserTransactions(userId, limit = 50, offset = 0) {
+  const countRes = await db.query(
+    "SELECT COUNT(*) as total FROM transactions WHERE user_id = $1",
+    [userId]
+  );
+
+  const result = await db.query(
+    `SELECT id, type, amount, status, details, created_at
+     FROM transactions
+     WHERE user_id = $1
+     ORDER BY created_at DESC
+     LIMIT $2 OFFSET $3`,
+    [userId, limit, offset]
+  );
+
+  return {
+    transactions: result.rows,
+    total: parseInt(countRes.rows[0].total, 10),
+    limit,
+    offset,
+  };
 }
 
 export async function getTopTraders(limit = 10) {

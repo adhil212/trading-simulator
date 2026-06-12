@@ -15,6 +15,7 @@ import { createPortfolioController } from "./controllers/portfolio.controller.js
 import createPortfolioRouter from "./routers/portfolio.routes.js";
 import adminRoutes from "./routers/admin.routes.js";
 import { createAdminController } from "./controllers/admin.controller.js";
+import chatRoutes from "./routers/chat.routes.js";
 import db from "./config/db.js";
 dotenv.config();
 const app = express();
@@ -59,6 +60,8 @@ app.use("/api/portfolio", createPortfolioRouter(portfolioController));
 
 const adminController = createAdminController(priceEngine);
 app.use("/api/admin", adminRoutes(adminController));
+
+app.use("/api/chat", chatRoutes);
 
 app.get("/", (req, res) => {
   res.send("Server running...");

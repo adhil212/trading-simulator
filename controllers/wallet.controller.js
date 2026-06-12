@@ -103,7 +103,7 @@ export const verifyDeposit = async (req, res) => {
 export const withdraw = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { amount } = req.body;
+    const { amount, method, upi_id, account_no, ifsc } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: "Invalid amount" });
@@ -112,43 +112,41 @@ export const withdraw = async (req, res) => {
       return res.status(400).json({ error: `Withdrawal amount cannot exceed ${MAX_WITHDRAWAL_AMOUNT}` });
     }
 
-    const client = await db.connect();
-    try {
-      await client.query("BEGIN");
-
-      const walletRes = await client.query(
-        `SELECT balance FROM wallets WHERE user_id = $1 FOR UPDATE`,
-        [userId]
-      );
-
-      if (walletRes.rows.length === 0) {
-        throw new Error("Wallet not found");
-      }
-
-      if (Number(walletRes.rows[0].balance) < amount) {
-        throw new Error("Insufficient balance");
-      }
-
-      await client.query(
-        `UPDATE wallets SET balance = balance - $1 WHERE user_id = $2`,
-        [amount, userId]
-      );
-
-      await client.query(
-        `INSERT INTO transactions (user_id, type, amount, status)
-         VALUES ($1, 'WITHDRAWAL', $2, 'COMPLETED')`,
-        [userId, amount]
-      );
-
-      await client.query("COMMIT");
-
-      res.json({ success: true, message: "Withdrawal successful" });
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
+    if (method === "upi" && !upi_id) {
+      return res.status(400).json({ error: "UPI ID is required" });
     }
+    if (method === "bank" && (!account_no || !ifsc)) {
+      return res.status(400).json({ error: "Account number and IFSC are required" });
+    }
+
+    if (method !== "upi" && method !== "bank") {
+      return res.status(400).json({ error: "Method must be 'upi' or 'bank'" });
+    }
+
+    const details = method === "upi"
+      ? { method, upi_id }
+      : { method, account_no, ifsc };
+
+    const balanceRes = await db.query(
+      "SELECT balance FROM wallets WHERE user_id = $1",
+      [userId]
+    );
+
+    if (balanceRes.rows.length === 0) {
+      return res.status(404).json({ error: "Wallet not found" });
+    }
+
+    if (Number(balanceRes.rows[0].balance) < amount) {
+      return res.status(400).json({ error: "Insufficient balance" });
+    }
+
+    await db.query(
+      `INSERT INTO transactions (user_id, type, amount, status, details)
+       VALUES ($1, 'WITHDRAWAL', $2, 'PENDING', $3)`,
+      [userId, amount, JSON.stringify(details)]
+    );
+
+    res.json({ success: true, message: "Withdrawal request submitted for admin approval" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
