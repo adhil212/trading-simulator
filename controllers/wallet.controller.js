@@ -20,16 +20,24 @@ export const createDepositOrder = async (req, res) => {
       return res.status(400).json({ error: `Deposit amount cannot exceed ${MAX_DEPOSIT_AMOUNT}` });
     }
 
+    const receipt = `deposit_${userId}_${Date.now()}`;
+
+    await db.query(
+      `INSERT INTO transactions (user_id, type, amount, status)
+       VALUES ($1, 'DEPOSIT', $2, 'PENDING')`,
+      [userId, amount]
+    );
+
     const order = await razorpay.orders.create({
       amount: Math.round(amount * 100),
       currency: "INR",
-      receipt: `deposit_${userId}_${Date.now()}`,
+      receipt,
     });
 
     await db.query(
-      `INSERT INTO transactions (user_id, type, amount, razorpay_order_id, status)
-       VALUES ($1, 'DEPOSIT', $2, $3, 'PENDING')`,
-      [userId, amount, order.id]
+      `UPDATE transactions SET razorpay_order_id = $1
+       WHERE user_id = $2 AND type = 'DEPOSIT' AND status = 'PENDING' AND razorpay_order_id IS NULL`,
+      [order.id, userId]
     );
 
     res.json({
@@ -127,26 +135,38 @@ export const withdraw = async (req, res) => {
       ? { method, upi_id }
       : { method, account_no, ifsc };
 
-    const balanceRes = await db.query(
-      "SELECT balance FROM wallets WHERE user_id = $1",
-      [userId]
-    );
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
 
-    if (balanceRes.rows.length === 0) {
-      return res.status(404).json({ error: "Wallet not found" });
+      const walletRes = await client.query(
+        "SELECT balance FROM wallets WHERE user_id = $1 FOR UPDATE",
+        [userId]
+      );
+
+      if (walletRes.rows.length === 0) {
+        throw new Error("Wallet not found");
+      }
+
+      if (Number(walletRes.rows[0].balance) < amount) {
+        throw new Error("Insufficient balance");
+      }
+
+      await client.query(
+        `INSERT INTO transactions (user_id, type, amount, status, details)
+         VALUES ($1, 'WITHDRAWAL', $2, 'PENDING', $3)`,
+        [userId, amount, JSON.stringify(details)]
+      );
+
+      await client.query("COMMIT");
+
+      res.json({ success: true, message: "Withdrawal request submitted for admin approval" });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      res.status(400).json({ error: error.message });
+    } finally {
+      client.release();
     }
-
-    if (Number(balanceRes.rows[0].balance) < amount) {
-      return res.status(400).json({ error: "Insufficient balance" });
-    }
-
-    await db.query(
-      `INSERT INTO transactions (user_id, type, amount, status, details)
-       VALUES ($1, 'WITHDRAWAL', $2, 'PENDING', $3)`,
-      [userId, amount, JSON.stringify(details)]
-    );
-
-    res.json({ success: true, message: "Withdrawal request submitted for admin approval" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

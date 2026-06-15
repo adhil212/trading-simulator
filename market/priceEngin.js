@@ -6,7 +6,9 @@ import * as AdminService from "../services/admin.service.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const SNAPSHOT_PATH = join(__dirname, 'price_snapshot.json');
+const DATA_DIR = join(dirname(__dirname), 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+const SNAPSHOT_PATH = join(DATA_DIR, 'price_snapshot.json');
 
 
 
@@ -415,8 +417,7 @@ class PriceEngine extends EventEmitter {
       historySize: Object.keys(this.priceHistory).reduce(
         (sum, symbol) => sum + this.priceHistory[symbol].length,
         0
-      ),
-      uptime: process.uptime()
+      )
     };
   }
 }

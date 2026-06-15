@@ -61,7 +61,7 @@ export const createTradingController = (priceEngine) => {
   const tradeHistory = async (req, res) => {
     try {
       const userId = req.user.id;
-      const limit = parseInt(req.query.limit, 10) || 50;
+      const limit = Math.min(parseInt(req.query.limit, 10) || 50, 1000);
       const offset = parseInt(req.query.offset, 10) || 0;
       const result = await TradingService.getTradeHistory(userId, limit, offset);
       res.json(result);
@@ -73,7 +73,7 @@ export const createTradingController = (priceEngine) => {
   const closedTrades = async (req, res) => {
     try {
       const userId = req.user.id;
-      const limit = parseInt(req.query.limit, 10) || 50;
+      const limit = Math.min(parseInt(req.query.limit, 10) || 50, 1000);
       const offset = parseInt(req.query.offset, 10) || 0;
       const result = await TradingService.getClosedTrades(userId, limit, offset);
       res.json(result);

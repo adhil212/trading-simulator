@@ -20,6 +20,7 @@
   },
   "homepage": "https://github.com/adhil212/trading-simulator#readme",
   "dependencies": {
+    "@upstash/redis": "^1.38.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",

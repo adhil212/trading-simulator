@@ -1,4 +1,5 @@
 import db from "../config/db.js";
+import { cacheGet, cacheSet, cacheDel } from "../utils/cache.js";
 
 export async function getUsers(search, limit, offset) {
   let whereClause = "";
@@ -104,15 +105,23 @@ export async function getAllTrades(filters, limit, offset) {
 }
 
 export async function getPlatformStats() {
+  const cached = await cacheGet("admin:stats");
+  if (cached) return cached;
+
   const userRes = await db.query(
     `SELECT COUNT(*) as total_users
      FROM users`
   );
 
   const tradeRes = await db.query(
-    `SELECT COUNT(*) as total_trades,
-            COALESCE(SUM(total_value), 0) as total_volume
+    `SELECT COUNT(*) as total_trades
      FROM trades`
+  );
+
+  const todayVolumeRes = await db.query(
+    `SELECT COALESCE(SUM(total_value), 0) as volume
+     FROM trades
+     WHERE DATE(executed_at) = CURRENT_DATE`
   );
 
   // const pnlRes = await db.query(
@@ -121,7 +130,7 @@ export async function getPlatformStats() {
   // );
 
   const usersOverTime = await db.query(
-    `SELECT DATE(created_at) as date, COUNT(*) as count
+    `SELECT TO_CHAR(DATE(created_at), 'YYYY-MM-DD') as date, COUNT(*) as count
      FROM users
      WHERE created_at > CURRENT_TIMESTAMP - INTERVAL '30 days'
      GROUP BY DATE(created_at)
@@ -129,30 +138,29 @@ export async function getPlatformStats() {
   );
 
   const volumeOverTime = await db.query(
-    `SELECT DATE(executed_at) as date, SUM(total_value) as volume
+    `SELECT TO_CHAR(DATE(executed_at), 'YYYY-MM-DD') as date, SUM(total_value) as volume
      FROM trades
      WHERE executed_at > CURRENT_TIMESTAMP - INTERVAL '30 days'
      GROUP BY DATE(executed_at)
      ORDER BY date`
   );
 
-  return {
+  const result = {
     users: {
       total: parseInt(userRes.rows[0].total_users, 10),
     },
     trades: {
       total: parseInt(tradeRes.rows[0].total_trades, 10),
-      totalVolume: parseFloat(tradeRes.rows[0].total_volume).toFixed(2),
-      // avgPrice: parseFloat(tradeRes.rows[0].avg_price).toFixed(2),
+      todayVolume: parseFloat(todayVolumeRes.rows[0].volume).toFixed(2),
     },
-    // pnl: {
-    //   totalRealizedPnl: parseFloat(pnlRes.rows[0].total_realized_pnl).toFixed(2),
-    // },
     charts: {
       usersOverTime: usersOverTime.rows,
       volumeOverTime: volumeOverTime.rows,
     },
   };
+
+  await cacheSet("admin:stats", result, 30);
+  return result;
 }
 
 export async function getUserPortfolio(userId) {
@@ -212,6 +220,10 @@ export async function getUserWallet(userId) {
 // --- Asset Management ---
 
 export async function getAssetsFromDB(includeInactive = false) {
+  const cacheKey = `admin:assets:${includeInactive}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return cached;
+
   const where = includeInactive ? '' : 'WHERE is_active = true';
   const result = await db.query(
     `SELECT symbol, name, type, base_price, volatility, trend,
@@ -220,7 +232,9 @@ export async function getAssetsFromDB(includeInactive = false) {
      FROM assets ${where}
      ORDER BY symbol`
   );
-  return result.rows;
+  const rows = result.rows;
+  await cacheSet(cacheKey, rows, 300);
+  return rows;
 }
 
 export async function insertAsset(data) {
@@ -236,6 +250,7 @@ export async function insertAsset(data) {
     [symbol, name, type, base_price, volatility, trend || 0,
      max_trend, min_trend, spread, trending != null ? trending : false, trend_strength != null ? trend_strength : 0.5]
   );
+  await cacheDel("admin:assets:*");
   return result.rows[0] || null;
 }
 
@@ -256,6 +271,7 @@ export async function updateAssetInDB(symbol, data) {
      WHERE symbol = $${idx} RETURNING *`,
     params
   );
+  await cacheDel("admin:assets:*");
   return result.rows[0] || null;
 }
 
@@ -437,80 +453,18 @@ export async function rejectWithdrawal(id) {
   return { success: true, message: "Withdrawal rejected" };
 }
 
-export async function rechargeUser(userId, amount, reason) {
-  const client = await db.connect();
-  try {
-    await client.query("BEGIN");
+export async function deleteUser(userId) {
+  const userRes = await db.query(
+    `SELECT is_admin FROM users WHERE id = $1`,
+    [userId]
+  );
+  if (userRes.rows.length === 0) throw new Error("User not found");
+  if (userRes.rows[0].is_admin) throw new Error("Cannot delete admin users");
 
-    const walletRes = await client.query(
-      `SELECT id FROM wallets WHERE user_id = $1 FOR UPDATE`,
-      [userId]
-    );
-
-    if (walletRes.rows.length === 0) {
-      throw new Error("User wallet not found");
-    }
-
-    await client.query(
-      `UPDATE wallets SET balance = balance + $1 WHERE user_id = $2`,
-      [amount, userId]
-    );
-
-    await client.query(
-      `INSERT INTO transactions (user_id, type, amount, status, details)
-       VALUES ($1, 'DEPOSIT', $2, 'COMPLETED', $3)`,
-      [userId, amount, JSON.stringify({ reason, admin_action: true })]
-    );
-
-    await client.query("COMMIT");
-
-    return { success: true, message: "Wallet recharged successfully" };
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
-export async function deductUser(userId, amount, reason) {
-  const client = await db.connect();
-  try {
-    await client.query("BEGIN");
-
-    const walletRes = await client.query(
-      `SELECT balance FROM wallets WHERE user_id = $1 FOR UPDATE`,
-      [userId]
-    );
-
-    if (walletRes.rows.length === 0) {
-      throw new Error("User wallet not found");
-    }
-
-    if (Number(walletRes.rows[0].balance) < amount) {
-      throw new Error("Insufficient balance");
-    }
-
-    await client.query(
-      `UPDATE wallets SET balance = balance - $1 WHERE user_id = $2`,
-      [amount, userId]
-    );
-
-    await client.query(
-      `INSERT INTO transactions (user_id, type, amount, status, details)
-       VALUES ($1, 'WITHDRAWAL', $2, 'COMPLETED', $3)`,
-      [userId, amount, JSON.stringify({ reason, admin_action: true })]
-    );
-
-    await client.query("COMMIT");
-
-    return { success: true, message: "Amount deducted successfully" };
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
+  await db.query(`DELETE FROM users WHERE id = $1`, [userId]);
+  await cacheDel("admin:stats");
+  await cacheDel("admin:topTraders:*");
+  return { success: true, message: "User deleted successfully" };
 }
 
 export async function getUserTransactions(userId, limit = 50, offset = 0) {
@@ -537,6 +491,10 @@ export async function getUserTransactions(userId, limit = 50, offset = 0) {
 }
 
 export async function getTopTraders(limit = 10) {
+  const cacheKey = `admin:topTraders:${limit}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return cached;
+
   const result = await db.query(
     `SELECT u.id, u.username,
             COALESCE(SUM(th.realized_pnl), 0) as total_pnl,
@@ -548,5 +506,7 @@ export async function getTopTraders(limit = 10) {
      LIMIT $1`,
     [limit]
   );
-  return result.rows;
+  const rows = result.rows;
+  await cacheSet(cacheKey, rows, 60);
+  return rows;
 }

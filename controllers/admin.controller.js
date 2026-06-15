@@ -3,10 +3,12 @@ import * as AdminService from "../services/admin.service.js";
 const SYMBOL_PATTERN = /^[A-Z][A-Z0-9_]{1,19}$/;
 
 export function createAdminController(priceEngine) {
+  const MAX_LIMIT = 1000;
+
   const getUsers = async (req, res) => {
     try {
       const search = req.query.search || "";
-      const limit = parseInt(req.query.limit, 10) || 50;
+      const limit = Math.min(parseInt(req.query.limit, 10) || 50, MAX_LIMIT);
       const offset = parseInt(req.query.offset, 10) || 0;
       const result = await AdminService.getUsers(search, limit, offset);
       res.json(result);
@@ -42,7 +44,7 @@ export function createAdminController(priceEngine) {
         date_from: req.query.date_from || null,
         date_to: req.query.date_to || null,
       };
-      const limit = parseInt(req.query.limit, 10) || 50;
+      const limit = Math.min(parseInt(req.query.limit, 10) || 50, MAX_LIMIT);
       const offset = parseInt(req.query.offset, 10) || 0;
       const result = await AdminService.getAllTrades(filters, limit, offset);
       res.json(result);
@@ -127,7 +129,7 @@ export function createAdminController(priceEngine) {
 
   const getCommissions = async (req, res) => {
     try {
-      const limit = parseInt(req.query.limit, 10) || 50;
+      const limit = Math.min(parseInt(req.query.limit, 10) || 50, MAX_LIMIT);
       const offset = parseInt(req.query.offset, 10) || 0;
       const result = await AdminService.getCommissionHistory(limit, offset);
       res.json(result);
@@ -145,7 +147,7 @@ export function createAdminController(priceEngine) {
         date_from: req.query.date_from || null,
         date_to: req.query.date_to || null,
       };
-      const limit = parseInt(req.query.limit, 10) || 50;
+      const limit = Math.min(parseInt(req.query.limit, 10) || 50, MAX_LIMIT);
       const offset = parseInt(req.query.offset, 10) || 0;
       const result = await AdminService.getAllTransactions(filters, limit, offset);
       res.json(result);
@@ -157,7 +159,7 @@ export function createAdminController(priceEngine) {
   const getWithdrawalRequests = async (req, res) => {
     try {
       const status = req.query.status || "PENDING";
-      const limit = parseInt(req.query.limit, 10) || 50;
+      const limit = Math.min(parseInt(req.query.limit, 10) || 50, MAX_LIMIT);
       const offset = parseInt(req.query.offset, 10) || 0;
       const result = await AdminService.getWithdrawalRequests(status, limit, offset);
       res.json(result);
@@ -187,43 +189,25 @@ export function createAdminController(priceEngine) {
     }
   };
 
-  const rechargeUser = async (req, res) => {
-    try {
-      const userId = parseInt(req.params.id, 10);
-      const { amount, reason } = req.body;
-      if (!amount || amount <= 0) {
-        return res.status(400).json({ error: "Invalid amount" });
-      }
-      const result = await AdminService.rechargeUser(userId, amount, reason || "Admin recharge");
-      res.json(result);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  };
-
-  const deductUser = async (req, res) => {
-    try {
-      const userId = parseInt(req.params.id, 10);
-      const { amount, reason } = req.body;
-      if (!amount || amount <= 0) {
-        return res.status(400).json({ error: "Invalid amount" });
-      }
-      const result = await AdminService.deductUser(userId, amount, reason || "Admin deduction");
-      res.json(result);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  };
-
   const getUserTransactions = async (req, res) => {
     try {
       const userId = parseInt(req.params.id, 10);
-      const limit = parseInt(req.query.limit, 10) || 50;
+      const limit = Math.min(parseInt(req.query.limit, 10) || 50, MAX_LIMIT);
       const offset = parseInt(req.query.offset, 10) || 0;
       const result = await AdminService.getUserTransactions(userId, limit, offset);
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error.message });
+    }
+  };
+
+  const deleteUser = async (req, res) => {
+    try {
+      const userId = parseInt(req.params.id, 10);
+      const result = await AdminService.deleteUser(userId);
+      res.json(result);
+    } catch (error) {
+      res.status(400).json({ error: error.message });
     }
   };
 
@@ -237,9 +221,8 @@ export function createAdminController(priceEngine) {
     getWithdrawalRequests,
     approveWithdrawal,
     rejectWithdrawal,
-    rechargeUser,
-    deductUser,
     getUserTransactions,
+    deleteUser,
     getMarketStatus,
     createAsset,
     updateAsset,

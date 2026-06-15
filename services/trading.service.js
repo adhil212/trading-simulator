@@ -55,6 +55,10 @@ export async function buyAsset(userId, symbol, quantity, currentPrice) {
 
     if (PLATFORM_ACCOUNT_ID && commission > 0) {
       await client.query(
+        "INSERT INTO wallets (user_id, balance) VALUES ($1, 0) ON CONFLICT DO NOTHING",
+        [PLATFORM_ACCOUNT_ID]
+      );
+      await client.query(
         "UPDATE wallets SET balance = balance + $1 WHERE user_id = $2",
         [commission, PLATFORM_ACCOUNT_ID]
       );
@@ -182,6 +186,10 @@ export async function sellAsset(userId, symbol, quantity, currentPrice) {
     const tradeId = tradeRes.rows[0].id;
 
     if (PLATFORM_ACCOUNT_ID && commission > 0) {
+      await client.query(
+        "INSERT INTO wallets (user_id, balance) VALUES ($1, 0) ON CONFLICT DO NOTHING",
+        [PLATFORM_ACCOUNT_ID]
+      );
       await client.query(
         "UPDATE wallets SET balance = balance + $1 WHERE user_id = $2",
         [commission, PLATFORM_ACCOUNT_ID]
@@ -380,24 +388,20 @@ export async function getPerformanceMetrics(userId) {
 }
 
 async function updatePerformanceMetrics(client, userId) {
-  try {
-    await client.query(
-      "SELECT calculate_performance_metrics($1)",
-      [userId]
-    );
+  await client.query(
+    "SELECT calculate_performance_metrics($1)",
+    [userId]
+  );
 
-    await client.query(
-      `UPDATE performance_metrics 
-       SET risk_reward_ratio = CASE 
-         WHEN avg_loss IS NOT NULL AND avg_loss != 0 AND avg_win IS NOT NULL 
-         THEN ROUND(ABS(avg_win / avg_loss)::numeric, 2) 
-         ELSE NULL END
-       WHERE user_id = $1`,
-      [userId]
-    );
-  } catch (error) {
-    console.error('Error updating performance metrics:', error);
-  }
+  await client.query(
+    `UPDATE performance_metrics 
+     SET risk_reward_ratio = CASE 
+       WHEN avg_loss IS NOT NULL AND avg_loss != 0 AND avg_win IS NOT NULL 
+       THEN ROUND(ABS(avg_win / avg_loss)::numeric, 2) 
+       ELSE NULL END
+     WHERE user_id = $1`,
+    [userId]
+  );
 }
 
 export async function getTradeStatistics(userId) {

@@ -1,5 +1,5 @@
 node_modules/
 .env
-price_snapshot.json
+data/
 api.md
 *.log
