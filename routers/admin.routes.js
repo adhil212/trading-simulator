@@ -16,6 +16,7 @@ export default (controller) => {
   router.post("/withdrawal-requests/:id/approve", adminMiddleware, controller.approveWithdrawal);
   router.post("/withdrawal-requests/:id/reject", adminMiddleware, controller.rejectWithdrawal);
   router.get("/users/:id/transactions", adminMiddleware, controller.getUserTransactions);
+  router.patch("/users/:id/admin", adminMiddleware, controller.setAdmin);
   router.delete("/users/:id", adminMiddleware, controller.deleteUser);
   router.get("/market/status", adminMiddleware, controller.getMarketStatus);
 

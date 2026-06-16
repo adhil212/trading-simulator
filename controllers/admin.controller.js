@@ -201,6 +201,20 @@ export function createAdminController(priceEngine) {
     }
   };
 
+  const setAdmin = async (req, res) => {
+    try {
+      const targetUserId = parseInt(req.params.id, 10);
+      const { is_admin } = req.body;
+      if (typeof is_admin !== "boolean") {
+        return res.status(400).json({ error: "is_admin must be a boolean" });
+      }
+      const result = await AdminService.setAdminStatus(targetUserId, is_admin, req.user.id);
+      res.json({ message: `Admin status updated`, user: result });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  };
+
   const deleteUser = async (req, res) => {
     try {
       const userId = parseInt(req.params.id, 10);
@@ -223,6 +237,7 @@ export function createAdminController(priceEngine) {
     rejectWithdrawal,
     getUserTransactions,
     deleteUser,
+    setAdmin,
     getMarketStatus,
     createAsset,
     updateAsset,

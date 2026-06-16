@@ -453,6 +453,27 @@ export async function rejectWithdrawal(id) {
   return { success: true, message: "Withdrawal rejected" };
 }
 
+export async function setAdminStatus(targetUserId, isAdmin, requestingUserId) {
+  if (targetUserId === requestingUserId) {
+    throw new Error("Cannot change your own admin status");
+  }
+
+  const userRes = await db.query(
+    `SELECT id, username, email, is_admin FROM users WHERE id = $1`,
+    [targetUserId]
+  );
+  if (userRes.rows.length === 0) throw new Error("User not found");
+
+  const result = await db.query(
+    `UPDATE users SET is_admin = $1 WHERE id = $2
+     RETURNING id, username, email, is_admin`,
+    [isAdmin, targetUserId]
+  );
+
+  await cacheDel("admin:stats");
+  return result.rows[0];
+}
+
 export async function deleteUser(userId) {
   const userRes = await db.query(
     `SELECT is_admin FROM users WHERE id = $1`,
