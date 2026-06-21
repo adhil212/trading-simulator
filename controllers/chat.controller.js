@@ -1,8 +1,20 @@
+import jwt from "jsonwebtoken";
 import { askGrok } from "../services/chat.service.js";
 
 export const chat = async (req, res) => {
   try {
-    const userId = req.user.id;
+    let userId = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      try {
+        const parts = authHeader.split(" ");
+        if (parts.length === 2 && parts[1]) {
+          const decoded = jwt.verify(parts[1], process.env.JWT_SECRET);
+          userId = decoded.id;
+        }
+      } catch {}
+    }
+
     const { message } = req.body;
 
     if (!message || typeof message !== "string" || message.trim().length === 0) {

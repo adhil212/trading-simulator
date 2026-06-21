@@ -84,51 +84,55 @@ function buildUserContext(userData) {
 }
 
 export async function askGrok(userId, message) {
-  const [walletRes, portfolioRes, tradesRes, perfRes] = await Promise.all([
-    db.query("SELECT balance FROM wallets WHERE user_id = $1", [userId]),
-    db.query(
-      `SELECT symbol, quantity, entry_price, current_price, unrealized_pnl
-       FROM portfolio WHERE user_id = $1 ORDER BY updated_at DESC`,
-      [userId]
-    ),
-    db.query(
-      `SELECT type, quantity, symbol, price, executed_at
-       FROM trades WHERE user_id = $1 ORDER BY executed_at DESC LIMIT 20`,
-      [userId]
-    ),
-    db.query("SELECT * FROM performance_metrics WHERE user_id = $1", [userId]),
-  ]);
+  let userContext = "";
 
-  const userData = {};
+  if (userId) {
+    const [walletRes, portfolioRes, tradesRes, perfRes] = await Promise.all([
+      db.query("SELECT balance FROM wallets WHERE user_id = $1", [userId]),
+      db.query(
+        `SELECT symbol, quantity, entry_price, current_price, unrealized_pnl
+         FROM portfolio WHERE user_id = $1 ORDER BY updated_at DESC`,
+        [userId]
+      ),
+      db.query(
+        `SELECT type, quantity, symbol, price, executed_at
+         FROM trades WHERE user_id = $1 ORDER BY executed_at DESC LIMIT 20`,
+        [userId]
+      ),
+      db.query("SELECT * FROM performance_metrics WHERE user_id = $1", [userId]),
+    ]);
 
-  if (walletRes.rows.length > 0) {
-    userData.wallet = { balance: walletRes.rows[0].balance };
+    const userData = {};
+
+    if (walletRes.rows.length > 0) {
+      userData.wallet = { balance: walletRes.rows[0].balance };
+    }
+
+    if (portfolioRes.rows.length > 0) {
+      userData.portfolio = portfolioRes.rows.map(r => ({
+        symbol: r.symbol,
+        quantity: parseFloat(r.quantity),
+        entryPrice: parseFloat(r.entry_price),
+        currentPrice: parseFloat(r.current_price),
+        unrealizedPnL: parseFloat(r.unrealized_pnl),
+      }));
+    }
+
+    if (tradesRes.rows.length > 0) {
+      userData.recentTrades = tradesRes.rows;
+    }
+
+    if (perfRes.rows.length > 0) {
+      const m = perfRes.rows[0];
+      userData.performance = {
+        totalTrades: m.total_trades,
+        winRate: parseFloat(m.win_rate).toFixed(1) + "%",
+        totalRealizedPnL: parseFloat(m.total_realized_pnl).toFixed(2),
+      };
+    }
+
+    userContext = buildUserContext(userData);
   }
-
-  if (portfolioRes.rows.length > 0) {
-    userData.portfolio = portfolioRes.rows.map(r => ({
-      symbol: r.symbol,
-      quantity: parseFloat(r.quantity),
-      entryPrice: parseFloat(r.entry_price),
-      currentPrice: parseFloat(r.current_price),
-      unrealizedPnL: parseFloat(r.unrealized_pnl),
-    }));
-  }
-
-  if (tradesRes.rows.length > 0) {
-    userData.recentTrades = tradesRes.rows;
-  }
-
-  if (perfRes.rows.length > 0) {
-    const m = perfRes.rows[0];
-    userData.performance = {
-      totalTrades: m.total_trades,
-      winRate: parseFloat(m.win_rate).toFixed(1) + "%",
-      totalRealizedPnL: parseFloat(m.total_realized_pnl).toFixed(2),
-    };
-  }
-
-  const userContext = buildUserContext(userData);
 
   const response = await fetch(GROQ_API_URL, {
     method: "POST",
