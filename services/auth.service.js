@@ -1,7 +1,9 @@
 import bcrypt from "bcrypt";
+import crypto from "crypto";
 import validator from "validator";
 import { OAuth2Client } from "google-auth-library";
 import db from "../config/db.js";
+import { sendOtpEmail } from "../utils/mail.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -53,7 +55,41 @@ async function ensureWallet(client, userId) {
   );
 }
 
-export async function registerUser(username, email, password) {
+export async function sendOtp(email) {
+  const normalizedEmail = normalizeEmail(email);
+  assertValidEmail(normalizedEmail);
+
+  const existing = await db.query(
+    "SELECT id FROM users WHERE email = $1",
+    [normalizedEmail]
+  );
+
+  if (existing.rows.length) {
+    throw new Error("Email is already registered");
+  }
+
+  await db.query(
+    "UPDATE otp_codes SET used = TRUE WHERE email = $1 AND used = FALSE",
+    [normalizedEmail]
+  );
+
+  const otp = String(crypto.randomInt(100000, 999999));
+  const client = await db.connect();
+
+  try {
+    await client.query(
+      `INSERT INTO otp_codes (email, otp, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '10 minutes')`,
+      [normalizedEmail, otp]
+    );
+
+    await sendOtpEmail(normalizedEmail, otp);
+  } finally {
+    client.release();
+  }
+}
+
+export async function verifyOtpAndRegister(username, email, otp, password) {
   const normalizedEmail = normalizeEmail(email);
   const cleanUsername = String(username || "").trim();
 
@@ -61,20 +97,31 @@ export async function registerUser(username, email, password) {
   assertValidEmail(normalizedEmail);
   assertStrongPassword(password);
 
+  if (!otp || String(otp).length !== 6) {
+    throw new Error("Invalid OTP");
+  }
+
+  const otpResult = await db.query(
+    `SELECT id FROM otp_codes
+     WHERE email = $1 AND otp = $2 AND used = FALSE AND expires_at > NOW()
+     ORDER BY created_at DESC LIMIT 1`,
+    [normalizedEmail, String(otp)]
+  );
+
+  if (!otpResult.rows.length) {
+    throw new Error("Invalid or expired OTP");
+  }
+
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
   const client = await db.connect();
 
   try {
     await client.query("BEGIN");
 
-    const existing = await client.query(
-      "SELECT id FROM users WHERE email = $1 FOR UPDATE",
-      [normalizedEmail]
+    await client.query(
+      "UPDATE otp_codes SET used = TRUE WHERE id = $1",
+      [otpResult.rows[0].id]
     );
-
-    if (existing.rows.length) {
-      throw new Error("Email is already registered");
-    }
 
     const userResult = await client.query(
       `INSERT INTO users (username, email, password)

@@ -2,15 +2,28 @@ import { generateAccessToken } from "../utils/token.js";
 import { createRefreshToken } from "../utils/refreshToken.js";
 
 import {
-  registerUser,
+  sendOtp,
+  verifyOtpAndRegister,
   loginUser,
   googleLogin,
 } from "../services/auth.service.js";
 
+export async function sendOtpHandler(req, res) {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email is required" });
+
+    await sendOtp(email);
+    res.json({ message: "OTP sent to your email" });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
 export async function register(req, res) {
   try {
-    const { username, email, password } = req.body;
-    const user = await registerUser(username, email, password);
+    const { username, email, otp, password } = req.body;
+    const user = await verifyOtpAndRegister(username, email, otp, password);
     const token = generateAccessToken(user);
     const refreshToken = await createRefreshToken(user.id);
 
